@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  pdf-translator:
+    image: pdf-translator:0.1.0
+    container_name: pdf-translator
+    devices:
+      - nvidia.com/gpu=all
+    ports:
+      - "8765:8765"
+      - "8288:8288"
+    volumes:
+      - /home/llm/pdf/pdf-translator/docker/..:/app
+    environment:
+      http_proxy: "http://192.168.3.122:7890"
+      https_proxy: "http://192.168.3.122:7890"
+      no_proxy: "localhost,127.0.0.1,.local"
+    command: >
+      bash -c "chmod +x /app/docker/start.sh && /app/docker/start.sh"
