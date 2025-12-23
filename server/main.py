@@ -184,13 +184,26 @@ class TranslateApi:
             Device to use for the layout model.
             Defaults to "cuda".
         """
+        # Check if fonts exist
+        font_path_ja = model_root_dir / "SourceHanSerif-Light.otf"
+        font_path_zh = model_root_dir / "SourceHanSerifSC-Regular.otf"
+
+        if not font_path_ja.exists():
+            print(f"Error: Japanese font not found at {font_path_ja}")
+            print(f"Contents of {model_root_dir}: {[p.name for p in model_root_dir.iterdir()]}")
+        
+        if not font_path_zh.exists():
+            print(f"Error: Chinese font not found at {font_path_zh}")
+            print(f"Contents of {model_root_dir}: {[p.name for p in model_root_dir.iterdir()]}")
+            print("Please ensure you have rebuilt the docker image: 'cd docker && make build'")
+
         self.fonts = {
             "ja": ImageFont.truetype(
-                str(model_root_dir / "SourceHanSerif-Light.otf"),
+                str(font_path_ja),
                 size=self.FONT_SIZE,
             ),
             "zh": ImageFont.truetype(
-                str(model_root_dir / "SourceHanSerifSC-Regular.otf"),
+                str(font_path_zh),
                 size=self.FONT_SIZE,
             ),
         }
