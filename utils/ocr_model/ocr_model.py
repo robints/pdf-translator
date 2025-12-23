@@ -75,7 +75,7 @@ class OCRModel:
         # params for text detector
         paddleocr_parameters.det_algorithm = "DB"
         paddleocr_parameters.det_model_dir = str(
-            model_root_dir / "en_PP-OCRv3_det_infer.onnx"
+            model_root_dir / "ch_PP-OCRv4_det_infer.onnx"
         )
         paddleocr_parameters.det_limit_side_len = 960
         paddleocr_parameters.det_limit_type = "max"
@@ -92,11 +92,11 @@ class OCRModel:
         # params for text recognizer
         paddleocr_parameters.rec_algorithm = "SVTR_LCNet"
         paddleocr_parameters.rec_model_dir = str(
-            model_root_dir / "en_PP-OCRv3_rec_infer.onnx"
+            model_root_dir / "ch_PP-OCRv4_rec_infer.onnx"
         )
         paddleocr_parameters.rec_image_shape = "3, 48, 320"
         paddleocr_parameters.rec_batch_num = 6
-        paddleocr_parameters.rec_char_dict_path = str(model_root_dir / "en_dict.txt")
+        paddleocr_parameters.rec_char_dict_path = str(model_root_dir / "ppocr_keys_v1.txt")
         paddleocr_parameters.use_space_char = True
         paddleocr_parameters.drop_score = 0.5
 
