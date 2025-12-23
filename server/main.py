@@ -3,7 +3,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -77,13 +77,17 @@ class TranslateApi:
         """Run the API server"""
         uvicorn.run(self.app, host="0.0.0.0", port=8765)
 
-    async def translate_pdf(self, input_pdf: UploadFile = File(...)) -> FileResponse:
+    async def translate_pdf(
+        self, input_pdf: UploadFile = File(...), target_lang: str = "ja"
+    ) -> FileResponse:
         """API endpoint for translating PDF files.
 
         Parameters
         ----------
         input_pdf: UploadFile
             Input PDF file
+        target_lang: str
+            Target language for translation. Defaults to "ja".
 
         Returns
         -------
@@ -91,7 +95,7 @@ class TranslateApi:
             Translated PDF file
         """
         input_pdf_data = await input_pdf.read()
-        self._translate_pdf(input_pdf_data, self.temp_dir_name)
+        self._translate_pdf(input_pdf_data, self.temp_dir_name, target_lang)
 
         return FileResponse(
             self.temp_dir_name / "translated.pdf", media_type="application/pdf"
@@ -105,7 +109,10 @@ class TranslateApi:
         return {"message": "temp dir cleared"}
 
     def _translate_pdf(
-        self, pdf_path_or_bytes: Union[Path, bytes], output_dir: Path
+        self,
+        pdf_path_or_bytes: Union[Path, bytes],
+        output_dir: Path,
+        target_lang: str = "ja",
     ) -> None:
         """Backend function for translating PDF files.
 
@@ -126,6 +133,8 @@ class TranslateApi:
             Path to the input PDF file or bytes of the input PDF file
         output_dir: Path
             Path to the output directory
+        target_lang: str
+            Target language for translation. Defaults to "ja".
         """
         if isinstance(pdf_path_or_bytes, Path):
             pdf_images = convert_from_path(pdf_path_or_bytes, dpi=self.DPI)
@@ -140,6 +149,7 @@ class TranslateApi:
                 img, original_img, reached_references = self.__translate_one_page(
                     image=image,
                     reached_references=reached_references,
+                    target_lang=target_lang,
                 )
                 fig, ax = plt.subplots(1, 2, figsize=(20, 14))
                 ax[0].imshow(original_img)
@@ -174,10 +184,16 @@ class TranslateApi:
             Device to use for the layout model.
             Defaults to "cuda".
         """
-        self.font = ImageFont.truetype(
-            str(model_root_dir / "SourceHanSerif-Light.otf"),
-            size=self.FONT_SIZE,
-        )
+        self.fonts = {
+            "ja": ImageFont.truetype(
+                str(model_root_dir / "SourceHanSerif-Light.otf"),
+                size=self.FONT_SIZE,
+            ),
+            "zh": ImageFont.truetype(
+                str(model_root_dir / "SourceHanSerifSC-Regular.otf"),
+                size=self.FONT_SIZE,
+            ),
+        }
         self.device = device
 
         self.layout_model = LayoutAnalyzer(
@@ -187,15 +203,28 @@ class TranslateApi:
             model_root_dir=model_root_dir / "paddle-ocr", device=self.device
         )
 
-        self.translate_model = MarianMTModel.from_pretrained("staka/fugumt-en-ja").to(
-            self.device
-        )
-        self.translate_tokenizer = MarianTokenizer.from_pretrained("staka/fugumt-en-ja")
+        self.translate_models = {
+            "ja": {
+                "model": MarianMTModel.from_pretrained("staka/fugumt-en-ja").to(
+                    self.device
+                ),
+                "tokenizer": MarianTokenizer.from_pretrained("staka/fugumt-en-ja"),
+            },
+            "zh": {
+                "model": MarianMTModel.from_pretrained("Helsinki-NLP/opus-mt-en-zh").to(
+                    self.device
+                ),
+                "tokenizer": MarianTokenizer.from_pretrained(
+                    "Helsinki-NLP/opus-mt-en-zh"
+                ),
+            },
+        }
 
     def __translate_one_page(
         self,
         image: Image.Image,
         reached_references: bool,
+        target_lang: str = "ja",
     ) -> Tuple[np.ndarray, np.ndarray, bool]:
         """Translate one page of the PDF file.
 
@@ -210,6 +239,8 @@ class TranslateApi:
             Image of the page
         reached_references: bool
             Whether the references section has been reached.
+        target_lang: str
+            Target language for translation. Defaults to "ja".
 
         Returns
         -------
@@ -227,15 +258,19 @@ class TranslateApi:
                 if len(ocr_results) > 1:
                     text = " ".join(ocr_results)
                     text = re.sub(r"\n|\t|\[|\]|\/|\|", " ", text)
-                    translated_text = self.__translate(text)
+                    translated_text = self.__translate(text, target_lang)
 
-                    # if almost all characters in translated text are not japanese characters, skip
-                    if len(
-                        re.findall(
-                            r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]",
-                            translated_text,
-                        )
-                    ) > 0.8 * len(translated_text):
+                    # if almost all characters in translated text are not target language characters, skip
+                    if target_lang == "ja":
+                        regex = r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]"
+                    elif target_lang == "zh":
+                        regex = r"[^\u4E00-\u9FFF\u3400-\u4DBF]"
+                    else:
+                        regex = None
+
+                    if regex and len(re.findall(regex, translated_text)) > 0.8 * len(
+                        translated_text
+                    ):
                         print("skipped")
                         continue
 
@@ -263,7 +298,7 @@ class TranslateApi:
                     draw.text(
                         (0, 0),
                         text=processed_text,
-                        font=self.font,
+                        font=self.fonts.get(target_lang, self.fonts["ja"]), # Fallback to Japanese font if target_lang not found
                         fill=(0, 0, 0),
                     )
                     new_block = np.array(new_block)
@@ -281,7 +316,7 @@ class TranslateApi:
 
         return img, original_img, reached_references
 
-    def __translate(self, text: str) -> str:
+    def __translate(self, text: str, target_lang: str = "ja") -> str:
         """Translate text using the translation model.
 
         If the text is too long, it will be splited with
@@ -291,6 +326,8 @@ class TranslateApi:
         ----------
         text: str
             Text to be translated.
+        target_lang: str
+            Target language for translation. Defaults to "ja".
 
         Returns
         -------
@@ -298,14 +335,17 @@ class TranslateApi:
             Translated text.
         """
         texts = self.__split_text(text, 448)
+        model_info = self.translate_models[target_lang]
+        translate_model = model_info["model"]
+        translate_tokenizer = model_info["tokenizer"]
 
         translated_texts = []
         for i, t in enumerate(texts):
-            inputs = self.translate_tokenizer(t, return_tensors="pt").input_ids.to(
+            inputs = translate_tokenizer(t, return_tensors="pt").input_ids.to(
                 self.device
             )
-            outputs = self.translate_model.generate(inputs, max_length=512)
-            res = self.translate_tokenizer.decode(outputs[0], skip_special_tokens=True)
+            outputs = translate_model.generate(inputs, max_length=512)
+            res = translate_tokenizer.decode(outputs[0], skip_special_tokens=True)
 
             # skip weird translations
             if res.startswith("「この版"):

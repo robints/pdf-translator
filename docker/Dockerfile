@@ -53,5 +53,6 @@ RUN git clone https://github.com/microsoft/unilm.git /unilm \
         /unilm/dit/object_detection/ditod/table_evaluation/data_structure.py
 
 RUN wget https://github.com/adobe-fonts/source-han-serif/raw/release/OTF/Japanese/SourceHanSerif-Light.otf -P /resources/models \
+        && wget https://github.com/adobe-fonts/source-han-serif/raw/release/OTF/SimplifiedChinese/SourceHanSerifSC-Regular.otf -P /resources/models \
         && mkdir -p /resources/models/unilm \
         && wget "https://huggingface.co/discus0434/publaynet-dit-base/resolve/main/publaynet_dit-b_cascade.pth" -P /resources/models/unilm
